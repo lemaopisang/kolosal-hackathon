@@ -2,6 +2,40 @@
 
 > AI-powered inclusive marketing platform for Indonesian MSMEs, built with Kolosal.ai
 
+## TL;DR Run It Locally
+
+```powershell
+# 1) Install
+cd inclusive-hub
+npm ci
+cd server
+npm ci
+
+# 2) Env (optional key for live Kolosal)
+copy .env.example .env
+# Edit .env to add KOLOSAL_API_KEY if you have one
+
+# 3) Start backend (port 3001)
+npm run dev
+
+# 4) In a new terminal, start frontend (port 5173)
+cd ..
+npm run dev
+
+# 5) Open the app
+http://localhost:5173
+```
+
+API test examples (PowerShell):
+
+```powershell
+$bias = '{"content":"Inclusive promo for Jakarta moms","language":"en"}'
+Invoke-RestMethod -Uri 'http://localhost:3001/api/bias' -Method Post -Body $bias -ContentType 'application/json'
+
+$copy = '{"prompt":"Write an inclusive ad for batik","language":"en","tone":"friendly"}'
+Invoke-RestMethod -Uri 'http://localhost:3001/api/copy' -Method Post -Body $copy -ContentType 'application/json'
+```
+
 A hackathon project showcasing how artificial intelligence can help local Indonesian businesses create bias-free, inclusive marketing campaigns that authentically connect with diverse audiences.
 
 ## 🎯 Project Overview
@@ -15,7 +49,7 @@ The Inclusive Marketing Hub demonstrates:
 
 ## 🏗️ Architecture
 
-```
+```text
 inclusive-hub/
 ├── src/                        # React frontend (Vite + TypeScript)
 │   ├── components/            # UI components (shadcn/ui + Tailwind)
@@ -46,23 +80,26 @@ inclusive-hub/
 ### Installation
 
 1. **Clone and setup**
-   ```powershell
-   cd inclusive-hub
-   npm install
-   cd server
-   npm install
-   ```
 
-2. **Configure environment**
-   ```powershell
-   cd server
-   cp .env.example .env
-   # Edit .env and add your KOLOSAL_API_KEY (optional)
-   ```
+  ```powershell
+  cd inclusive-hub
+  npm install
+  cd server
+  npm install
+  ```
 
-3. **Run development servers**
+1. **Configure environment**
+
+  ```powershell
+  cd server
+  cp .env.example .env
+  # Edit .env and add your KOLOSAL_API_KEY (optional)
+  ```
+
+1. **Run development servers**
 
    **Terminal 1 - Backend:**
+
    ```powershell
    cd server
    npm run dev
@@ -70,12 +107,13 @@ inclusive-hub/
    ```
 
    **Terminal 2 - Frontend:**
+
    ```powershell
    npm run dev
    # App runs on http://localhost:5173
    ```
 
-4. **Open browser**
+1. **Open browser**
    Navigate to `http://localhost:5173`
 
 ## 🎮 Demo Controls
@@ -88,6 +126,7 @@ Press **`Ctrl+Shift+F`** to toggle between:
 - **❄️ Demo Frozen**: Locks current data in localStorage for consistent presentations
 
 A subtle yellow badge appears in the top-right when frozen. This ensures:
+
 - No surprises during pitches (API errors won't derail demos)
 - Consistent bias detection examples across multiple views
 - Offline-capable presentations if WiFi fails
@@ -163,6 +202,7 @@ faker.setLocale('id_ID')
 ```
 
 This ensures:
+
 - Consistent frozen demos (same personas every time)
 - Authentic Indonesian data (not translated from English)
 - Randomized live mode (fresh data on each request)

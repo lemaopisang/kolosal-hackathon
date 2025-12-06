@@ -9,6 +9,12 @@ import {
   generateBiasInsight,
   generateCopySuggestion,
 } from './mockData.js'
+import {
+  validateBiasCheck,
+  validateCopyGeneration,
+  validateCampaignCreation,
+  validatePagination,
+} from './validation.js'
 
 dotenv.config()
 
@@ -70,12 +76,19 @@ const deriveSeverity = (score) => {
 }
 
 const normalizeBiasResponse = (data, campaignId) => {
-  const biases = Array.isArray(data?.biases)
-    ? data.biases.map((b) => ({
-        type: b.type || 'gender',
-        description: b.description || 'Potential bias detected',
-        affectedText: b.affectedText || b.text || '',
-        score: clampScore(b.score ?? 50, 50),
+  const rawBiases =
+    data?.biases ||
+    data?.issues ||
+    data?.detections ||
+    data?.findings ||
+    []
+
+  const biases = Array.isArray(rawBiases)
+    ? rawBiases.map((b) => ({
+        type: b.type || b.category || 'gender',
+        description: b.description || b.message || 'Potential bias detected',
+        affectedText: b.affectedText || b.text || b.segment || '',
+        score: clampScore(b.score ?? b.severityScore ?? 50, 50),
         recommendation: b.recommendation || b.suggestion || 'Use neutral language',
         examples: Array.isArray(b.examples)
           ? b.examples
@@ -87,13 +100,26 @@ const normalizeBiasResponse = (data, campaignId) => {
       }))
     : []
 
-  const overallScore = clampScore(data?.overallScore ?? data?.score ?? 65, 65)
+  const rawOverall = data?.overallScore ?? data?.score
+  // If the API sends normalized 0-1 scores, scale to 0-100
+  const scaledOverall = typeof rawOverall === 'number' && rawOverall <= 1 ? rawOverall * 100 : rawOverall
+
+  // If no overall score provided, derive from bias scores (average) when available
+  const biasScoreAverage = biases.length
+    ? biases.reduce((sum, b) => sum + clampScore(b.score ?? 0, 0), 0) / biases.length
+    : undefined
+
+  const overallScore = clampScore(scaledOverall ?? biasScoreAverage ?? 65, 65)
   const severity = data?.severity || deriveSeverity(overallScore)
-  const suggestions = Array.isArray(data?.suggestions)
+  let suggestions = Array.isArray(data?.suggestions)
     ? data.suggestions
     : Array.isArray(data?.tips)
       ? data.tips
       : []
+
+  if (!Array.isArray(suggestions) && typeof suggestions === 'string') {
+    suggestions = [suggestions]
+  }
 
   return {
     id: data?.id || data?._id || data?.uuid || crypto.randomUUID?.() || `${Date.now()}`,
@@ -111,15 +137,29 @@ const normalizeBiasResponse = (data, campaignId) => {
 }
 
 const normalizeCopyResponse = (data, campaignId, language, tone) => {
-  const suggestions = Array.isArray(data?.suggestions)
+  let suggestions = Array.isArray(data?.suggestions)
     ? data.suggestions
     : Array.isArray(data?.variants)
       ? data.variants
-      : []
+      : Array.isArray(data?.choices)
+        ? data.choices.map((c) => ({
+            id: c.id,
+            text: c.message?.content || c.text || c.content,
+            tone: c.tone,
+            language: c.language,
+            inclusivityScore: c.inclusivityScore,
+          }))
+        : []
+
+  // Fallback: if API responded with a single text field, wrap as one suggestion
+  if ((!suggestions || suggestions.length === 0) && (data?.output || data?.text || data?.copy || data?.content)) {
+    const text = data.output || data.text || data.copy || data.content
+    suggestions = [{ text }]
+  }
 
   const normalizedSuggestions = suggestions.map((s) => ({
     id: s.id || s._id || crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`,
-    text: s.text || s.content || s.copy || '',
+    text: s.text || s.content || s.copy || s.message?.content || '',
     language: s.language || language || 'en',
     tone: s.tone || tone || 'friendly',
     inclusivityScore: clampScore(s.inclusivityScore ?? s.score ?? 85, 85),
@@ -152,15 +192,18 @@ const normalizeCopyResponse = (data, campaignId, language, tone) => {
 
 // Health check
 app.get('/health', (req, res) => {
+  const apiUrl = process.env.KOLOSAL_API_URL || 'https://api.kolosal.ai/v1'
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     kolosalApiKey: process.env.KOLOSAL_API_KEY ? 'configured' : 'missing',
+    kolosalApiUrl: apiUrl,
+    mode: process.env.KOLOSAL_API_KEY ? 'live' : 'mock',
   })
 })
 
 // Get all campaign personas (paginated)
-app.get('/api/campaigns', (req, res) => {
+app.get('/api/campaigns', validatePagination, (req, res) => {
   const page = parseInt(req.query.page) || 1
   const limit = parseInt(req.query.limit) || 12
   const freeze = req.query.freeze === 'true'
@@ -202,7 +245,7 @@ app.get('/api/campaigns/:id', (req, res) => {
 })
 
 // Create new campaign persona
-app.post('/api/campaigns', (req, res) => {
+app.post('/api/campaigns', validateCampaignCreation, (req, res) => {
   const newPersona = generateCampaignPersona()
 
   // Override with request data if provided
@@ -222,36 +265,51 @@ app.post('/api/campaigns', (req, res) => {
 })
 
 // Check content for bias
-app.post('/api/bias', async (req, res) => {
+app.post('/api/bias', validateBiasCheck, async (req, res) => {
   try {
     const { campaignId, content, language = 'en' } = req.body
 
-    if (!content) {
-      return res.status(400).json({
-        success: false,
-        message: 'Content is required',
-        timestamp: new Date().toISOString(),
-      })
-    }
-
     // If KOLOSAL_API_KEY is configured, try the live API and fallback to mock on error
-    if (process.env.KOLOSAL_API_KEY && process.env.KOLOSAL_API_URL) {
+    if (process.env.KOLOSAL_API_KEY) {
       try {
-        const url = `${process.env.KOLOSAL_API_URL.replace(/\/$/, '')}/bias-check`
-        const response = await axios.post(
-          url,
-          { content, language, campaignId },
-          {
-            headers: { Authorization: `Bearer ${process.env.KOLOSAL_API_KEY}` },
-            timeout: 10000,
+        const baseUrl = (process.env.KOLOSAL_API_URL || 'https://api.kolosal.ai/v1').replace(/\/$/, '')
+        const url = `${baseUrl}/content/bias-check`
+        
+        const requestBody = {
+          content,
+          language,
+          context: {
+            campaignId: campaignId || null,
           }
-        )
-        const normalized = normalizeBiasResponse(response.data, campaignId)
+        }
+
+        console.log(`[Kolosal Bias] Calling ${url}`)
+        
+        const response = await axios.post(url, requestBody, {
+          headers: {
+            'Authorization': `Bearer ${process.env.KOLOSAL_API_KEY}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-API-Version': '2024-01',
+          },
+          timeout: 10000,
+        })
+        
+        console.log(`[Kolosal Bias] Success: ${response.status}`)
+        
+        // Extract data from nested response structure
+        const apiData = response.data?.data || response.data
+        const normalized = normalizeBiasResponse(apiData, campaignId)
         return res.json({ data: normalized, success: true, timestamp: new Date().toISOString() })
       } catch (err) {
         console.warn('Kolosal bias API failed, falling back to mock:', err?.message)
         if (process.env.NODE_ENV !== 'production') {
-          console.error(err?.response?.data || err)
+          console.error('Full error:', {
+            status: err?.response?.status,
+            statusText: err?.response?.statusText,
+            data: err?.response?.data,
+            url: err?.config?.url
+          })
         }
       }
     }
@@ -265,36 +323,54 @@ app.post('/api/bias', async (req, res) => {
 })
 
 // Generate inclusive copy suggestions
-app.post('/api/copy', async (req, res) => {
+app.post('/api/copy', validateCopyGeneration, async (req, res) => {
   try {
     const { campaignId, prompt, language = 'en', tone = 'friendly' } = req.body
 
-    if (!prompt) {
-      return res.status(400).json({
-        success: false,
-        message: 'Prompt is required',
-        timestamp: new Date().toISOString(),
-      })
-    }
-
     // Try live Kolosal if configured, otherwise use mock generator
-    if (process.env.KOLOSAL_API_KEY && process.env.KOLOSAL_API_URL) {
+    if (process.env.KOLOSAL_API_KEY) {
       try {
-        const url = `${process.env.KOLOSAL_API_URL.replace(/\/$/, '')}/generate-copy`
-        const response = await axios.post(
-          url,
-          { prompt, language, tone, campaignId },
-          {
-            headers: { Authorization: `Bearer ${process.env.KOLOSAL_API_KEY}` },
-            timeout: 15000,
+        const baseUrl = (process.env.KOLOSAL_API_URL || 'https://api.kolosal.ai/v1').replace(/\/$/, '')
+        const url = `${baseUrl}/content/generate`
+        
+        const requestBody = {
+          prompt,
+          language,
+          tone,
+          parameters: {
+            campaignId: campaignId || null,
+            variants: 3,
+            includeMetrics: true,
           }
-        )
-        const normalized = normalizeCopyResponse(response.data, campaignId, language, tone)
+        }
+
+        console.log(`[Kolosal Copy] Calling ${url}`)
+        
+        const response = await axios.post(url, requestBody, {
+          headers: {
+            'Authorization': `Bearer ${process.env.KOLOSAL_API_KEY}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-API-Version': '2024-01',
+          },
+          timeout: 15000,
+        })
+        
+        console.log(`[Kolosal Copy] Success: ${response.status}`)
+        
+        // Extract data from nested response structure
+        const apiData = response.data?.data || response.data
+        const normalized = normalizeCopyResponse(apiData, campaignId, language, tone)
         return res.json({ data: normalized, success: true, timestamp: new Date().toISOString() })
       } catch (err) {
         console.warn('Kolosal copy API failed, falling back to mock:', err?.message)
         if (process.env.NODE_ENV !== 'production') {
-          console.error(err?.response?.data || err)
+          console.error('Full error:', {
+            status: err?.response?.status,
+            statusText: err?.response?.statusText,
+            data: err?.response?.data,
+            url: err?.config?.url
+          })
         }
       }
     }
@@ -351,9 +427,13 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
+  const apiUrl = process.env.KOLOSAL_API_URL || 'https://api.kolosal.ai/v1'
+  const isLive = !!process.env.KOLOSAL_API_KEY
   console.log(`\n🚀 Inclusive Marketing Hub API`)
   console.log(`📡 Server running on http://localhost:${PORT}`)
   console.log(`🔑 Kolosal API Key: ${process.env.KOLOSAL_API_KEY ? '✅ Configured' : '❌ Missing'}`)
+  console.log(`🌐 Kolosal API URL: ${apiUrl}`)
+  console.log(`${isLive ? '🟢 LIVE' : '🟡 MOCK'} MODE - ${isLive ? 'Using Kolosal API with fallback' : 'Using mock data only'}`)
   console.log(`📊 Mock personas loaded: ${personas.length}`)
   console.log(`\n📚 Available endpoints:`)
   console.log(`   GET  /health`)

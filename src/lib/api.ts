@@ -169,7 +169,8 @@ export interface HealthStatus {
 }
 
 export async function checkHealth(): Promise<HealthStatus> {
-  const response = await fetch('/health')
+  // Use the backend server directly on port 3001
+  const response = await fetch('http://localhost:3001/health')
   return response.json()
 }
 

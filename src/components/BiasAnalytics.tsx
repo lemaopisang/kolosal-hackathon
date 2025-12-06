@@ -10,7 +10,7 @@ import type { BiasInsight, BiasSeverity } from '@/types'
 
 const severityConfig: Record<
   BiasSeverity,
-  { icon: any; color: string; bgColor: string; label: string }
+  { icon: React.ComponentType<{ className?: string }>; color: string; bgColor: string; label: string }
 > = {
   low: {
     icon: CheckCircle,
