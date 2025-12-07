@@ -316,6 +316,7 @@ npm run lint
 ### "Cannot find module '@/lib/utils'"
 
 Restart the TypeScript server in VS Code:
+ 
 - Press `Ctrl+Shift+P`
 - Run "TypeScript: Restart TS Server"
 
@@ -329,6 +330,7 @@ npm install # Reinstall dependencies
 ### Frozen mode not persisting
 
 Clear localStorage:
+
 ```javascript
 // Browser console
 localStorage.clear()

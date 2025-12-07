@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useFreezeStore } from '@/store/freeze'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,14 +17,18 @@ export default function PersonaGrid() {
     staleTime: freezeMode ? Infinity : 1000 * 60 * 5,
   })
 
-  // Store frozen data when in freeze mode
-  if (freezeMode && data && !frozenData.campaigns) {
-    setFrozenData('campaigns', data)
-  }
+  // Store frozen data when in freeze mode (side-effect to avoid render-time state updates)
+  useEffect(() => {
+    if (freezeMode && data && !frozenData.campaigns) {
+      setFrozenData('campaigns', data)
+    }
+  }, [freezeMode, data, frozenData.campaigns, setFrozenData])
 
-  const campaigns = freezeMode && frozenData.campaigns 
+  const cached = (freezeMode && frozenData.campaigns
     ? (frozenData.campaigns as PaginatedResponse<CampaignPersona>).data
-    : data?.data || []
+    : data?.data)
+
+  const campaigns = Array.isArray(cached) ? cached : []
 
   if (error) {
     return (
@@ -96,7 +101,7 @@ export default function PersonaGrid() {
                   <span>{persona.targetAudience}</span>
                 </div>
 
-                {persona.digitalPresence.hasSocialMedia && (
+                {persona.digitalPresence?.hasSocialMedia && Array.isArray(persona.digitalPresence.platforms) && (
                   <div className="mt-3 flex flex-wrap gap-1">
                     {persona.digitalPresence.platforms.slice(0, 3).map((platform) => (
                       <Badge key={platform} variant="secondary" className="text-xs">
@@ -116,7 +121,7 @@ export default function PersonaGrid() {
                     Marketing Goals:
                   </p>
                   <div className="flex flex-wrap gap-1">
-                    {persona.marketingGoals.slice(0, 2).map((goal, idx) => (
+                    {(persona.marketingGoals || []).slice(0, 2).map((goal, idx) => (
                       <Badge key={idx} variant="outline" className="text-xs">
                         {goal.split(' ').slice(0, 3).join(' ')}
                       </Badge>

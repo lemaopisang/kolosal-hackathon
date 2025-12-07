@@ -10,6 +10,8 @@ import BiasAnalytics from '@/components/BiasAnalytics'
 import CopyGenerator from '@/components/CopyGenerator'
 import InclusiveAnalytics from '@/components/InclusiveAnalytics'
 import InsightsFooter from '@/components/InsightsFooter'
+import ErrorBoundary from '@/components/ErrorBoundary'
+import DebugPanel from '@/components/DebugPanel'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -59,6 +61,7 @@ function AppContent() {
       <CopyGenerator />
       <InclusiveAnalytics />
       <InsightsFooter />
+      <DebugPanel />
       
       <Toaster />
     </div>
@@ -68,7 +71,9 @@ function AppContent() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppContent />
+      <ErrorBoundary>
+        <AppContent />
+      </ErrorBoundary>
       <ReactQueryDevtools initialIsOpen={false} />
     </QueryClientProvider>
   )

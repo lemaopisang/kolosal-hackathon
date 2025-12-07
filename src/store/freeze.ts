@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, createJSONStorage } from 'zustand/middleware'
 
 interface FreezeState {
   freezeMode: boolean
@@ -27,6 +27,22 @@ export const useFreezeStore = create<FreezeState>()(
     }),
     {
       name: 'inclusive-hub-freeze',
+      storage: createJSONStorage(() => ({
+        getItem: (name) => {
+          const value = localStorage.getItem(name)
+          if (!value) return null
+          try {
+            JSON.parse(value)
+            return value
+          } catch (err) {
+            console.warn('Corrupt freeze cache detected, clearing', err)
+            localStorage.removeItem(name)
+            return null
+          }
+        },
+        setItem: (name, value) => localStorage.setItem(name, value),
+        removeItem: (name) => localStorage.removeItem(name),
+      })),
     }
   )
 )

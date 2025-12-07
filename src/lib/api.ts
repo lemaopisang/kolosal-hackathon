@@ -42,7 +42,7 @@ async function apiFetch<T>(
       ...options,
     })
 
-    const data = await response.json()
+    const data = await response.json().catch(() => ({}))
 
     if (!response.ok) {
       throw new ApiError(
@@ -79,12 +79,16 @@ export async function fetchCampaigns(params?: {
   const response = await apiFetch<PaginatedResponse<CampaignPersona>>(
     `/campaigns${query ? `?${query}` : ''}`
   )
-  return response.data
+  const normalized = (response as ApiResponse<PaginatedResponse<CampaignPersona>>)?.data
+    ?? (response as unknown as PaginatedResponse<CampaignPersona>)
+
+  return normalized ?? { data: [], page: 1, limit: 0, total: 0, hasMore: false }
 }
 
 export async function fetchCampaign(id: string): Promise<CampaignPersona> {
   const response = await apiFetch<CampaignPersona>(`/campaigns/${id}`)
-  return response.data
+  const normalized = (response as ApiResponse<CampaignPersona>)?.data ?? (response as unknown as CampaignPersona)
+  return normalized
 }
 
 export async function createCampaign(data: {
@@ -97,7 +101,8 @@ export async function createCampaign(data: {
     method: 'POST',
     body: JSON.stringify(data),
   })
-  return response.data
+  const normalized = (response as ApiResponse<CampaignPersona>)?.data ?? (response as unknown as CampaignPersona)
+  return normalized
 }
 
 // ============================================================================
@@ -111,7 +116,8 @@ export async function checkBias(
     method: 'POST',
     body: JSON.stringify(request),
   })
-  return response.data
+  const normalized = (response as ApiResponse<BiasInsight>)?.data ?? (response as unknown as BiasInsight)
+  return normalized
 }
 
 // ============================================================================
@@ -125,7 +131,8 @@ export async function generateCopy(
     method: 'POST',
     body: JSON.stringify(request),
   })
-  return response.data
+  const normalized = (response as ApiResponse<CopySuggestion>)?.data ?? (response as unknown as CopySuggestion)
+  return normalized
 }
 
 // ============================================================================
@@ -154,7 +161,8 @@ export interface PlatformStats {
 
 export async function fetchPlatformStats(): Promise<PlatformStats> {
   const response = await apiFetch<PlatformStats>('/stats')
-  return response.data
+  const normalized = (response as ApiResponse<PlatformStats>)?.data ?? (response as unknown as PlatformStats)
+  return normalized
 }
 
 // ============================================================================
